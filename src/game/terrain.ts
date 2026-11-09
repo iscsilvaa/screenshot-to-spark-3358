@@ -52,7 +52,7 @@ export function baseHeight(x: number, z: number, e = 0) {
   const k = radiusScale(e);
   // Later expansions add irregular lobes so new land isn't a uniform scale-up.
   const lobes = Math.max(0, e - 2) * (1.4 * Math.sin(2 * ang + 0.7) + 0.9 * Math.cos(4 * ang - 0.3));
-  const R = lobes + k * (13 + 2.4 * Math.sin(3 * ang) + 1.4 * Math.cos(5 * ang + 1) + 1.2 * (noise(x * 0.15, z * 0.15) - 0.5);
+  const R = lobes + k * (13 + 2.4 * Math.sin(3 * ang) + 1.4 * Math.cos(5 * ang + 1) + 1.2 * (noise(x * 0.15, z * 0.15) - 0.5));
   const d = Math.sqrt(x * x + z * z) / R;
   const land = 1 - smoothstep(0.5, 1.12, d);
   const hills = Math.max(0, noise(x * 0.16 + 7, z * 0.16 + 3) - 0.45) * 5;
