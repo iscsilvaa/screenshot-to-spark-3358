@@ -120,7 +120,6 @@ export function validate(tool: Tool, x: number, z: number): string | null {
 }
 
 export function placeAt(x: number, z: number) {
-  console.log("place", x, z, state.tool);
   const tool = state.tool;
   if (!tool || tool === "remove") return;
   x = Math.round(x * 2) / 2;
