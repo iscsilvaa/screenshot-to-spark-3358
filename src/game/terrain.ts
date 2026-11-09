@@ -28,18 +28,46 @@ export function smoothstep(a: number, b: number, x: number) {
   return smooth(t);
 }
 
-/** Height of the island without lakes. */
-export function baseHeight(x: number, z: number) {
+/**
+ * Expansion milestones. `area` is total area relative to the original island.
+ * Add entries here for future levels (20, 25, 30...).
+ */
+export const EXPANSION_AREAS = [1, 1.3, 1.6, 2.0];
+/** Mountain + waterfall region appears with expansion index 2 (level 10). */
+export const MOUNTAIN = { x: -9, z: -9, height: 5.5, sigma: 3.0, stage: 2 };
+
+/** Radius multiplier for a (possibly fractional, animating) expansion value. */
+export function radiusScale(e: number) {
+  const max = EXPANSION_AREAS.length - 1;
+  const c = Math.max(0, Math.min(max, e));
+  const i = Math.min(max - 1, Math.floor(c));
+  const t = c - i;
+  const a = EXPANSION_AREAS[i]! + (EXPANSION_AREAS[i + 1]! - EXPANSION_AREAS[i]!) * t;
+  return Math.sqrt(a);
+}
+
+/** Height of the island without lakes, for expansion value `e` (0 = original island). */
+export function baseHeight(x: number, z: number, e = 0) {
   const ang = Math.atan2(z, x);
-  const R = 13 + 2.4 * Math.sin(3 * ang) + 1.4 * Math.cos(5 * ang + 1) + 1.2 * (noise(x * 0.15, z * 0.15) - 0.5);
+  const k = radiusScale(e);
+  // Later expansions add irregular lobes so new land isn't a uniform scale-up.
+  const lobes = Math.max(0, e - 2) * (1.4 * Math.sin(2 * ang + 0.7) + 0.9 * Math.cos(4 * ang - 0.3));
+  const R = lobes + k * (13 + 2.4 * Math.sin(3 * ang) + 1.4 * Math.cos(5 * ang + 1) + 1.2 * (noise(x * 0.15, z * 0.15) - 0.5);
   const d = Math.sqrt(x * x + z * z) / R;
   const land = 1 - smoothstep(0.5, 1.12, d);
   const hills = Math.max(0, noise(x * 0.16 + 7, z * 0.16 + 3) - 0.45) * 5;
-  return -1.8 + land * (2.6 + noise(x * 0.3, z * 0.3) * 0.5 + hills * land);
+  let h = -1.8 + land * (2.6 + noise(x * 0.3, z * 0.3) * 0.5 + hills * land);
+  const m = Math.max(0, Math.min(1, e - (MOUNTAIN.stage - 1)));
+  if (m > 0) {
+    const d2 = (x - MOUNTAIN.x) ** 2 + (z - MOUNTAIN.z) ** 2;
+    const peak = m * MOUNTAIN.height * Math.exp(-d2 / (2 * MOUNTAIN.sigma ** 2));
+    h += peak * (1 + 0.25 * (noise(x * 0.8, z * 0.8) - 0.5));
+  }
+  return h;
 }
 
-export function heightAt(x: number, z: number, lakes: Lake[]) {
-  let h = baseHeight(x, z);
+export function heightAt(x: number, z: number, lakes: Lake[], e = 0) {
+  let h = baseHeight(x, z, e);
   for (const l of lakes) {
     const d = Math.hypot(x - l.x, z - l.z);
     const t = 1 - smoothstep(l.r * 0.5, l.r + 0.8, d);
