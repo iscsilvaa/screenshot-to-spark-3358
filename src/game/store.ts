@@ -1,5 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { baseHeight, inLake, SAND_LEVEL, type Lake } from "./terrain";
+import { baseHeight as rawHeight, inLake, SAND_LEVEL, type Lake } from "./terrain";
+import { EXPANSIONS, expansionsForLevel, generateExpansion, type ExpansionStage } from "./expansion";
+
+/** Height using the player's unlocked territory. */
+const baseHeight = (x: number, z: number) => rawHeight(x, z, state?.expansion ?? 0);
 
 export type ObjKind = "tree" | "palm" | "rock" | "house" | "animal";
 export type Tool = "tree" | "rock" | "house" | "lake" | "animal" | "remove" | null;
@@ -27,6 +31,11 @@ export interface GameState {
   xp: number;
   tool: Tool;
   message: string | null;
+  /** Number of expansions unlocked (persisted). */
+  expansion: number;
+  /** Set when an expansion was just unlocked; drives the celebration UI. */
+  celebration: (ExpansionStage & { index: number }) | null;
+  sound: boolean;
 }
 
 export const COSTS: Record<Exclude<Tool, null | "remove">, Partial<Resources>> = {
@@ -67,7 +76,7 @@ function seed(): GameState {
   objects.push({ id: id(), kind: "house", x: -2, z: -1, rot: 0.4, scale: 1, variant: 0 });
   objects.push({ id: id(), kind: "animal", x: -1, z: 2, rot: 0, scale: 1, variant: 0 });
   objects.push({ id: id(), kind: "animal", x: 0.5, z: -3, rot: 0, scale: 1, variant: 1 });
-  return { objects, lakes, resources: { coins: 30, wood: 12, stone: 6 }, xp: 0, tool: null, message: null };
+  return { objects, lakes, resources: { coins: 30, wood: 12, stone: 6 }, xp: 0, tool: null, message: null, expansion: 0, celebration: null, sound: true };
 }
 
 let state: GameState = seed();
@@ -75,6 +84,28 @@ const listeners = new Set<() => void>();
 function set(patch: Partial<GameState>) {
   state = { ...state, ...patch };
   listeners.forEach((l) => l());
+  if (patch.xp !== undefined) checkExpansion(true);
+}
+
+/** Unlocks any expansions the current level has earned. Each happens exactly once. */
+export function checkExpansion(celebrate: boolean) {
+  const target = expansionsForLevel(levelFromXp(state.xp).level);
+  while (state.expansion < target) {
+    const index = state.expansion + 1;
+    const gen = generateExpansion(index, state.objects, state.lakes);
+    set({
+      expansion: index,
+      objects: [...state.objects, ...gen.objects.map((o) => ({ ...o, id: id() }))],
+      lakes: [...state.lakes, ...gen.lakes.map((l) => ({ ...l, id: id() }))],
+      celebration: celebrate ? { ...EXPANSIONS[index - 1]!, index } : state.celebration,
+    });
+  }
+}
+export function dismissCelebration() {
+  set({ celebration: null });
+}
+export function toggleSound() {
+  set({ sound: !state.sound });
 }
 export const getState = () => state;
 export function useGame<T>(sel: (s: GameState) => T): T {
@@ -167,9 +198,12 @@ export function tickIncome() {
 
 /** Serializable snapshot — ready to be stored in a Lovable Cloud table later. */
 export function snapshot() {
-  const { objects, lakes, resources, xp } = state;
-  return { objects, lakes, resources, xp };
+  const { objects, lakes, resources, xp, expansion } = state;
+  return { objects, lakes, resources, xp, expansion };
 }
-export function loadSnapshot(s: ReturnType<typeof snapshot>) {
-  set({ ...s, tool: null });
+export function loadSnapshot(s: Partial<ReturnType<typeof snapshot>>) {
+  state = { ...state, ...s, expansion: s.expansion ?? 0, tool: null, celebration: null };
+  // Rebuild any regions the saved level has earned (older saves), silently.
+  checkExpansion(false);
+  listeners.forEach((l) => l());
 }
