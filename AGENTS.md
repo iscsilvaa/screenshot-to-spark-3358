@@ -28,3 +28,6 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+- Game rules/state live in src/game/store.ts + terrain.ts (no React/three imports in terrain); scene in World.tsx only draws state. Why: testable rules.
+- Saves go through SaveAdapter in src/game/persistence.ts (localStorage now). Why: swap to Lovable Cloud without touching game code.
