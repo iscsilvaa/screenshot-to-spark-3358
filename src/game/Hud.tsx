@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Volume2, VolumeX, Sparkles as SparkIcon, Settings, RotateCcw, Coins, Home, Mountain, PawPrint, Shovel, Trees, Droplets, Axe, Package } from "lucide-react";
-import { dismissCelebration, toggleSound, resetGame, resetPrices, setPrice, DEFAULT_PRICES, type Buildable, levelFromXp, loadSnapshot, setTool, snapshot, tickIncome, useGame, type Tool } from "./store";
+import { Volume2, VolumeX, Sparkles as SparkIcon, Settings, RotateCcw, Coins, Home, Mountain, PawPrint, Shovel, Trees, Droplets, Axe } from "lucide-react";
+import { dismissCelebration, toggleSound, resetGame, resetPrices, setPrice, type Buildable, levelFromXp, loadSnapshot, setTool, snapshot, tickIncome, useGame, type Tool } from "./store";
 import { localAdapter } from "./persistence";
 
 const TOOLS: { id: Exclude<Tool, null>; label: string; icon: typeof Trees; hint: string }[] = [
