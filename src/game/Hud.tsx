@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
-import { Coins, Home, Mountain, PawPrint, Shovel, Trees, Droplets, Axe, Package } from "lucide-react";
-import { COSTS, levelFromXp, loadSnapshot, setTool, snapshot, tickIncome, useGame, type Tool } from "./store";
+import { Volume2, VolumeX, Sparkles as SparkIcon, Coins, Home, Mountain, PawPrint, Shovel, Trees, Droplets, Axe, Package } from "lucide-react";
+import { dismissCelebration, toggleSound, COSTS, levelFromXp, loadSnapshot, setTool, snapshot, tickIncome, useGame, type Tool } from "./store";
 import { localAdapter } from "./persistence";
 
 const TOOLS: { id: Exclude<Tool, null>; label: string; icon: typeof Trees; hint: string }[] = [
@@ -22,6 +22,11 @@ export function Hud() {
   const tool = useGame((s) => s.tool);
   const message = useGame((s) => s.message);
   const lvl = levelFromXp(xp);
+  const celebration = useGame((s) => s.celebration);
+  const sound = useGame((s) => s.sound);
+  useEffect(() => {
+    if (celebration && sound) playChime();
+  }, [celebration, sound]);
 
   const counts = useMemo(() => {
     const c = { trees: 0, animals: 0, houses: 0, rocks: 0 };
@@ -64,7 +69,28 @@ export function Hud() {
             <div className="hud-progress h-full rounded-full transition-all duration-500" style={{ width: `${lvl.progress * 100}%` }} />
           </div>
         </div>
+        <button onClick={toggleSound} aria-label={sound ? "Desligar som" : "Ligar som"} className="text-muted-foreground hover:text-foreground">
+          {sound ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+        </button>
       </header>
+
+      {celebration && (
+        <div className="pointer-events-auto absolute inset-0 flex items-center justify-center">
+          <div className="hud-panel max-w-sm p-6 text-center">
+            <SparkIcon className="mx-auto mb-2 h-8 w-8 text-primary" />
+            <h2 className="font-display text-3xl text-foreground">Sua ilha cresceu!</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{celebration.title} — nível {celebration.level}</p>
+            <ul className="mt-4 space-y-1 text-sm text-foreground">
+              {celebration.features.map((f) => (
+                <li key={f}>✦ {f}</li>
+              ))}
+            </ul>
+            <button onClick={dismissCelebration} className="hud-tool mx-auto mt-5 px-6" data-active>
+              <span className="text-sm font-semibold">Explorar</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Side */}
       <aside className="hud-panel pointer-events-auto absolute left-4 top-1/2 hidden w-52 -translate-y-1/2 p-4 md:block">
@@ -129,4 +155,26 @@ function Stat({ icon: Icon, label, value, accent }: { icon: typeof Trees; label:
       <span className="font-semibold tabular-nums text-foreground">{value}</span>
     </div>
   );
+}
+
+/** Short synthesized achievement chime (C-E-G-C arpeggio). */
+function playChime() {
+  try {
+    const ctx = new AudioContext();
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "triangle";
+      o.frequency.value = f;
+      const t = ctx.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+      o.connect(g).connect(ctx.destination);
+      o.start(t);
+      o.stop(t + 0.65);
+    });
+    setTimeout(() => ctx.close(), 1500);
+  } catch {
+    /* audio unavailable */
+  }
 }

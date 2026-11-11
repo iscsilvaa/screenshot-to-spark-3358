@@ -1,8 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
-import { baseHeight, heightAt, SAND_LEVEL, type Lake } from "./terrain";
+import { baseHeight, heightAt as rawHeightAt, MOUNTAIN, SAND_LEVEL, type Lake } from "./terrain";
 import { placeAt, removeObject, useGame, validate, type WorldObject } from "./store";
+
+/** Displayed (animated) expansion value; eases toward the store's value. */
+export const view = { e: -1 };
+const heightAt = (x: number, z: number, lakes: Lake[]) => rawHeightAt(x, z, lakes, Math.max(0, view.e));
 
 const C = {
   deepSand: new THREE.Color("#d9b77e"),
@@ -19,10 +23,14 @@ export function Terrain() {
   const tool = useGame((s) => s.tool);
   const [hover, setHover] = useState<{ x: number; z: number; ok: boolean } | null>(null);
 
-  const geo = useMemo(() => {
-    const g = new THREE.PlaneGeometry(40, 40, 80, 80).rotateX(-Math.PI / 2).toNonIndexed();
+  const expansion = useGame((s) => s.expansion);
+  if (view.e < 0) view.e = expansion;
+  const geo = useMemo(() => new THREE.PlaneGeometry(56, 56, 96, 96).rotateX(-Math.PI / 2).toNonIndexed(), []);
+  const paint = () => {
+    const g = geo;
     const p = g.attributes["position"] as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) p.setY(i, heightAt(p.getX(i), p.getZ(i), lakes));
+    p.needsUpdate = true;
     const colors = new Float32Array(p.count * 3);
     const c = new THREE.Color();
     for (let i = 0; i < p.count; i += 3) {
@@ -37,8 +45,15 @@ export function Terrain() {
     }
     g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     g.computeVertexNormals();
-    return g;
-  }, [lakes]);
+    g.computeBoundingSphere();
+  };
+  useMemo(paint, [lakes, geo]);
+  useFrame((_, dt) => {
+    if (Math.abs(view.e - expansion) < 0.001) return;
+    view.e = Math.min(expansion, view.e + Math.min(dt, 0.05) * 0.4);
+    if (view.e > expansion) view.e = expansion;
+    paint();
+  });
 
   const onMove = (e: ThreeEvent<PointerEvent>) => {
     if (!tool || tool === "remove") return hover && setHover(null);
@@ -64,6 +79,7 @@ export function Terrain() {
       {lakes.map((l) => (
         <LakeWater key={l.id} lake={l} />
       ))}
+      {expansion >= MOUNTAIN.stage && <Waterfall lakes={lakes} />}
       {hover && tool && tool !== "remove" && (
         <mesh position={[hover.x, heightAt(hover.x, hover.z, lakes) + 0.06, hover.z]} rotation-x={-Math.PI / 2}>
           <ringGeometry args={[tool === "lake" ? 1.4 : 0.35, tool === "lake" ? 1.6 : 0.5, 24]} />
@@ -87,18 +103,80 @@ function LakeWater({ lake }: { lake: Lake }) {
   );
 }
 
+/* Waterfall: a flowing strip from near the peak down toward the mountain lake. */
+function Waterfall({ lakes }: { lakes: Lake[] }) {
+  const tex = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = 32; c.height = 128;
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#7fd6e6"; ctx.fillRect(0, 0, 32, 128);
+    for (let i = 0; i < 40; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.5})`;
+      ctx.fillRect(Math.random() * 32, Math.random() * 128, 2 + Math.random() * 3, 8 + Math.random() * 18);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }, []);
+  useFrame((_, dt) => { tex.offset.y += Math.min(dt, 0.05) * 1.2; });
+  const lake = lakes.find((l) => Math.hypot(l.x - MOUNTAIN.x, l.z - MOUNTAIN.z) < 7);
+  const tx = lake ? lake.x : MOUNTAIN.x + 3, tz = lake ? lake.z : MOUNTAIN.z + 3;
+  const dx = tx - MOUNTAIN.x, dz = tz - MOUNTAIN.z, len = Math.hypot(dx, dz);
+  const sx = MOUNTAIN.x + (dx / len) * 1.2, sz = MOUNTAIN.z + (dz / len) * 1.2;
+  const top = heightAt(sx, sz, lakes) + 0.1, bottom = lake ? lake.level : heightAt(tx, tz, lakes);
+  const mx = (sx + tx) / 2, mz = (sz + tz) / 2, run = Math.hypot(tx - sx, tz - sz);
+  const drop = top - bottom, length = Math.hypot(run, drop);
+  return (
+    <mesh position={[mx, (top + bottom) / 2 + 0.15, mz]} rotation={[0, Math.atan2(dx, dz), 0]}>
+      <group rotation-x={-Math.PI / 2 + Math.atan2(drop, run)}>
+        <mesh>
+          <planeGeometry args={[0.7, length]} />
+          <meshStandardMaterial map={tex} transparent opacity={0.9} side={THREE.DoubleSide} roughness={0.2} />
+        </mesh>
+      </group>
+    </mesh>
+  );
+}
+
+/* Sparkle burst shown while an expansion is being celebrated. */
+export function Sparkles() {
+  const active = useGame((s) => s.celebration !== null);
+  const ref = useRef<THREE.Points>(null);
+  const geo = useMemo(() => {
+    const arr = new Float32Array(200 * 3);
+    for (let i = 0; i < 200; i++) {
+      const a = Math.random() * Math.PI * 2, r = 10 + Math.random() * 10;
+      arr.set([Math.cos(a) * r, Math.random() * 3, Math.sin(a) * r], i * 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+    return g;
+  }, []);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    ref.current.position.y = (clock.elapsedTime % 3) * 0.8;
+    (ref.current.material as THREE.PointsMaterial).opacity = 0.9 - (clock.elapsedTime % 3) * 0.3;
+  });
+  if (!active) return null;
+  return (
+    <points ref={ref} geometry={geo}>
+      <pointsMaterial color="#fff3a8" size={0.18} transparent opacity={0.9} />
+    </points>
+  );
+}
+
 /* ---------------- Ocean ---------------- */
 export function Ocean() {
   const ref = useRef<THREE.Mesh>(null);
   const { geo, base, shore } = useMemo(() => {
-    const g = new THREE.PlaneGeometry(90, 90, 90, 90).rotateX(-Math.PI / 2);
+    const g = new THREE.PlaneGeometry(110, 110, 100, 100).rotateX(-Math.PI / 2);
     const p = g.attributes["position"] as THREE.BufferAttribute;
     const shore = new Float32Array(p.count);
     const colors = new Float32Array(p.count * 3);
     const deep = new THREE.Color("#1b8fb5"), shallow = new THREE.Color("#4fd8d0"), foam = new THREE.Color("#e9fbf6");
     const c = new THREE.Color();
     for (let i = 0; i < p.count; i++) {
-      const h = baseHeight(p.getX(i), p.getZ(i));
+      const h = baseHeight(p.getX(i), p.getZ(i), 3);
       const s = Math.max(0, Math.min(1, (h + 1.8) / 1.8));
       shore[i] = s;
       c.copy(deep).lerp(shallow, Math.pow(s, 0.6));
