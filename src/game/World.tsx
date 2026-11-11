@@ -127,14 +127,14 @@ function Waterfall({ lakes }: { lakes: Lake[] }) {
   const mx = (sx + tx) / 2, mz = (sz + tz) / 2, run = Math.hypot(tx - sx, tz - sz);
   const drop = top - bottom, length = Math.hypot(run, drop);
   return (
-    <mesh position={[mx, (top + bottom) / 2 + 0.15, mz]} rotation={[0, Math.atan2(dx, dz), 0]}>
+    <group position={[mx, (top + bottom) / 2 + 0.15, mz]} rotation={[0, Math.atan2(dx, dz), 0]}>
       <group rotation-x={-Math.PI / 2 + Math.atan2(drop, run)}>
         <mesh>
           <planeGeometry args={[0.7, length]} />
           <meshStandardMaterial map={tex} transparent opacity={0.9} side={THREE.DoubleSide} roughness={0.2} />
         </mesh>
       </group>
-    </mesh>
+    </group>
   );
 }
 
