@@ -18,19 +18,18 @@ describe("island rules", () => {
     expect(s.resources.coins).toBe(before.resources.coins - 3);
     expect(s.objects.length).toBe(before.objects.length + 1);
   });
-  it("building a house costs 8 wood and 4 stone", () => {
-    const before = getState().resources;
+  it("building a house costs only coins (15 by default)", () => {
+    const before = getState().resources.coins;
     const [x, z] = freeSpot("house");
     setTool("house");
     placeAt(x, z);
-    expect(getState().resources.wood).toBe(before.wood - 8);
-    expect(getState().resources.stone).toBe(before.stone - 4);
+    expect(getState().resources.coins).toBe(before - 15);
   });
-  it("removing a tree gives 3 wood", () => {
+  it("removing a tree refunds half its price in coins", () => {
     const t = getState().objects.find((o) => o.kind === "tree" || o.kind === "palm")!;
-    const wood = getState().resources.wood;
+    const coins = getState().resources.coins;
     removeObject(t.id);
-    expect(getState().resources.wood).toBe(wood + 3);
+    expect(getState().resources.coins).toBe(coins + 1);
   });
   it("cannot build in the ocean", () => {
     expect(validate("house", 30, 30)).not.toBeNull();
@@ -46,5 +45,26 @@ describe("island expansion", () => {
     loadSnapshot({ ...getState(), xp, expansion: 0 });
     expect(getState().expansion).toBe(1);
     expect(getState().objects.length).toBeGreaterThan(before);
+  });
+});
+
+describe("prices and reset", () => {
+  it("a custom price is charged", async () => {
+    const { setPrice, resetGame } = await import("./store");
+    resetGame();
+    setPrice("tree", 7);
+    const before = getState().resources.coins;
+    const [x, z] = freeSpot("tree");
+    setTool("tree");
+    placeAt(x, z);
+    expect(getState().resources.coins).toBe(before - 7);
+  });
+  it("reset returns to 30 coins, level 0 xp, keeps prices", async () => {
+    const { resetGame } = await import("./store");
+    resetGame();
+    expect(getState().resources.coins).toBe(30);
+    expect(getState().xp).toBe(0);
+    expect(getState().expansion).toBe(0);
+    expect(getState().prices.tree).toBe(7);
   });
 });

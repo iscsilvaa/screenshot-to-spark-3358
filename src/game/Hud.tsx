@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from "react";
-import { Volume2, VolumeX, Sparkles as SparkIcon, Coins, Home, Mountain, PawPrint, Shovel, Trees, Droplets, Axe, Package } from "lucide-react";
-import { dismissCelebration, toggleSound, COSTS, levelFromXp, loadSnapshot, setTool, snapshot, tickIncome, useGame, type Tool } from "./store";
+import { useEffect, useMemo, useState } from "react";
+import { Volume2, VolumeX, Sparkles as SparkIcon, Settings, RotateCcw, Coins, Home, Mountain, PawPrint, Shovel, Trees, Droplets, Axe } from "lucide-react";
+import { dismissCelebration, toggleSound, resetGame, resetPrices, setPrice, type Buildable, levelFromXp, loadSnapshot, setTool, snapshot, tickIncome, useGame, type Tool } from "./store";
 import { localAdapter } from "./persistence";
 
 const TOOLS: { id: Exclude<Tool, null>; label: string; icon: typeof Trees; hint: string }[] = [
@@ -9,10 +9,9 @@ const TOOLS: { id: Exclude<Tool, null>; label: string; icon: typeof Trees; hint:
   { id: "house", label: "Casa", icon: Home, hint: "Construa em terreno livre" },
   { id: "lake", label: "Lago", icon: Droplets, hint: "Escave em solo elevado" },
   { id: "animal", label: "Animal", icon: PawPrint, hint: "Solte um animal na ilha" },
-  { id: "remove", label: "Remover", icon: Axe, hint: "Clique num objeto para coletar recursos" },
+  { id: "remove", label: "Remover", icon: Axe, hint: "Clique num objeto para recuperar moedas" },
 ];
 
-const RES_LABEL = { coins: "moedas", wood: "madeira", stone: "pedra" } as const;
 
 export function Hud() {
   const objects = useGame((s) => s.objects);
@@ -24,6 +23,8 @@ export function Hud() {
   const lvl = levelFromXp(xp);
   const celebration = useGame((s) => s.celebration);
   const sound = useGame((s) => s.sound);
+  const prices = useGame((s) => s.prices);
+  const [panel, setPanel] = useState(false);
   useEffect(() => {
     if (celebration && sound) playChime();
   }, [celebration, sound]);
@@ -74,6 +75,32 @@ export function Hud() {
         </button>
       </header>
 
+      {panel && (
+        <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-foreground/20" onClick={() => setPanel(false)}>
+          <div className="hud-panel w-72 p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-display text-2xl text-foreground">Preços</h2>
+            <p className="mb-3 text-xs text-muted-foreground">Em moedas. Remover devolve metade do preço.</p>
+            {TOOLS.filter((t) => t.id !== "remove").map((t) => (
+              <label key={t.id} className="flex items-center gap-2 py-1 text-sm">
+                <t.icon className="h-4 w-4 text-primary" />
+                <span className="flex-1 text-foreground">{t.label}</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={prices[t.id as Buildable]}
+                  onChange={(e) => setPrice(t.id as Buildable, Number(e.target.value))}
+                  className="w-20 rounded-md border border-border bg-background px-2 py-1 text-right tabular-nums text-foreground"
+                />
+              </label>
+            ))}
+            <div className="mt-4 flex gap-2">
+              <button onClick={resetPrices} className="hud-tool flex-1 py-2"><span className="text-xs font-semibold">Padrão</span></button>
+              <button onClick={() => setPanel(false)} className="hud-tool flex-1 py-2" data-active><span className="text-xs font-semibold">Fechar</span></button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {celebration && (
         <div className="pointer-events-auto absolute inset-0 flex items-center justify-center">
           <div className="hud-panel max-w-sm p-6 text-center">
@@ -102,8 +129,24 @@ export function Hud() {
         <div className="my-3 h-px bg-border" />
         <p className="hud-label">Recursos</p>
         <Stat icon={Coins} label="Moedas" value={res.coins} accent />
-        <Stat icon={Package} label="Madeira" value={res.wood} accent />
-        <Stat icon={Mountain} label="Pedra" value={res.stone} accent />
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => setPanel(true)} className="hud-tool flex-1 !flex-row gap-1.5 py-2">
+            <Settings className="h-4 w-4" />
+            <span className="text-xs font-semibold">Preços</span>
+          </button>
+          <button
+            onClick={() => {
+              if (confirm("Começar uma ilha nova? Todo o progresso será perdido.")) {
+                resetGame();
+                localAdapter.save(snapshot());
+              }
+            }}
+            className="hud-tool flex-1 !flex-row gap-1.5 py-2"
+          >
+            <RotateCcw className="h-4 w-4" />
+            <span className="text-xs font-semibold">Resetar</span>
+          </button>
+        </div>
       </aside>
 
       {/* Bottom */}
@@ -115,7 +158,7 @@ export function Hud() {
         )}
         <nav className="hud-panel pointer-events-auto flex gap-1.5 p-2">
           {TOOLS.map((t) => {
-            const cost = t.id !== "remove" ? COSTS[t.id] : null;
+            const cost = t.id !== "remove" ? prices[t.id] : null;
             return (
               <button
                 key={t.id}
@@ -127,11 +170,7 @@ export function Hud() {
                 <t.icon className="h-5 w-5" />
                 <span className="text-xs font-semibold">{t.label}</span>
                 <span className="text-[10px] opacity-70">
-                  {cost
-                    ? Object.entries(cost)
-                        .map(([k, v]) => `${v} ${RES_LABEL[k as keyof typeof RES_LABEL]}`)
-                        .join(" · ")
-                    : "+ recursos"}
+                  {cost !== null ? `${cost} moedas` : "+ moedas"}
                 </span>
               </button>
             );
