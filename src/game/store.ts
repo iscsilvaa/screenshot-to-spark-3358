@@ -3,7 +3,8 @@ import { baseHeight as rawHeight, inLake, SAND_LEVEL, type Lake } from "./terrai
 import { EXPANSIONS, expansionsForLevel, generateExpansion, type ExpansionStage } from "./expansion";
 
 /** Height using the player's unlocked territory. */
-const baseHeight = (x: number, z: number) => rawHeight(x, z, state?.expansion ?? 0);
+let curExpansion = 0;
+const baseHeight = (x: number, z: number) => rawHeight(x, z, curExpansion);
 
 export type ObjKind = "tree" | "palm" | "rock" | "house" | "animal";
 export type Tool = "tree" | "rock" | "house" | "lake" | "animal" | "remove" | null;
@@ -83,6 +84,7 @@ let state: GameState = seed();
 const listeners = new Set<() => void>();
 function set(patch: Partial<GameState>) {
   state = { ...state, ...patch };
+  curExpansion = state.expansion;
   listeners.forEach((l) => l());
   if (patch.xp !== undefined) checkExpansion(true);
 }
@@ -203,6 +205,7 @@ export function snapshot() {
 }
 export function loadSnapshot(s: Partial<ReturnType<typeof snapshot>>) {
   state = { ...state, ...s, expansion: s.expansion ?? 0, tool: null, celebration: null };
+  curExpansion = state.expansion;
   // Rebuild any regions the saved level has earned (older saves), silently.
   checkExpansion(false);
   listeners.forEach((l) => l());

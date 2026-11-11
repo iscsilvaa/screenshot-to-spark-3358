@@ -1,8 +1,29 @@
 import { Suspense, useEffect, useRef } from "react";
+import type * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment, Lightformer, OrbitControls } from "@react-three/drei";
-import { Clouds, Fireflies, Objects, Ocean, Sun, Terrain } from "./World";
+import { Clouds, Fireflies, Objects, Ocean, Sparkles, Sun, Terrain } from "./World";
+import { useGame } from "./store";
 import { Hud } from "./Hud";
+
+/* Camera eases out a little after each expansion so the new land fits. */
+function CameraPullback() {
+  const expansion = useGame((s) => s.expansion);
+  const last = useRef(expansion);
+  const target = useRef<number | null>(null);
+  useFrame(({ camera }) => {
+    if (expansion !== last.current) {
+      last.current = expansion;
+      target.current = Math.max(18, (camera as THREE.OrthographicCamera).zoom * 0.85);
+    }
+    if (target.current === null) return;
+    const cam = camera as THREE.OrthographicCamera;
+    cam.zoom += (target.current - cam.zoom) * 0.03;
+    cam.updateProjectionMatrix();
+    if (Math.abs(cam.zoom - target.current) < 0.05) target.current = null;
+  });
+  return null;
+}
 
 function ReadySignal() {
   const done = useRef(false);
@@ -40,6 +61,8 @@ export default function Game() {
         <Ocean />
         <Clouds />
         <Fireflies />
+        <Sparkles />
+        <CameraPullback />
         <OrbitControls
           enableRotate={false}
           enablePan={false}

@@ -36,3 +36,15 @@ describe("island rules", () => {
     expect(validate("house", 30, 30)).not.toBeNull();
   });
 });
+
+describe("island expansion", () => {
+  it("reaching level 5 unlocks exactly one expansion, without removing objects", async () => {
+    const { loadSnapshot, levelFromXp } = await import("./store");
+    const before = getState().objects.length;
+    let xp = 0;
+    while (levelFromXp(xp).level < 5) xp++;
+    loadSnapshot({ ...getState(), xp, expansion: 0 });
+    expect(getState().expansion).toBe(1);
+    expect(getState().objects.length).toBeGreaterThan(before);
+  });
+});
