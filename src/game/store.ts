@@ -21,9 +21,13 @@ export interface WorldObject {
 
 export interface Resources {
   coins: number;
-  wood: number;
-  stone: number;
 }
+
+export type Buildable = Exclude<Tool, null | "remove">;
+export type Prices = Record<Buildable, number>;
+export const DEFAULT_PRICES: Prices = { tree: 3, rock: 2, house: 15, lake: 10, animal: 6 };
+/** Fraction of an object's price refunded when removed. */
+export const REFUND = 0.5;
 
 export interface GameState {
   objects: WorldObject[];
@@ -37,15 +41,9 @@ export interface GameState {
   /** Set when an expansion was just unlocked; drives the celebration UI. */
   celebration: (ExpansionStage & { index: number }) | null;
   sound: boolean;
+  prices: Prices;
 }
 
-export const COSTS: Record<Exclude<Tool, null | "remove">, Partial<Resources>> = {
-  tree: { coins: 3 },
-  rock: { coins: 2 },
-  house: { wood: 8, stone: 4 },
-  lake: { coins: 10 },
-  animal: { coins: 6 },
-};
 export const XP_GAIN = { tree: 5, rock: 3, house: 20, lake: 12, animal: 10, remove: 2 };
 
 export function levelFromXp(xp: number) {
@@ -77,7 +75,7 @@ function seed(): GameState {
   objects.push({ id: id(), kind: "house", x: -2, z: -1, rot: 0.4, scale: 1, variant: 0 });
   objects.push({ id: id(), kind: "animal", x: -1, z: 2, rot: 0, scale: 1, variant: 0 });
   objects.push({ id: id(), kind: "animal", x: 0.5, z: -3, rot: 0, scale: 1, variant: 1 });
-  return { objects, lakes, resources: { coins: 30, wood: 12, stone: 6 }, xp: 0, tool: null, message: null, expansion: 0, celebration: null, sound: true };
+  return { objects, lakes, resources: { coins: 30 }, xp: 0, tool: null, message: null, expansion: 0, celebration: null, sound: true, prices: { ...DEFAULT_PRICES } };
 }
 
 let state: GameState = seed();
@@ -125,13 +123,18 @@ function flash(message: string) {
   msgTimer = setTimeout(() => set({ message: null }), 1800);
 }
 
-function canAfford(cost: Partial<Resources>) {
-  return (Object.keys(cost) as (keyof Resources)[]).every((k) => state.resources[k] >= (cost[k] ?? 0));
+const pay = (cost: number, gain = 0): Resources => ({ coins: state.resources.coins + gain - cost });
+
+export function setPrice(tool: Buildable, price: number) {
+  set({ prices: { ...state.prices, [tool]: Math.max(0, Math.round(price) || 0) } });
 }
-function pay(cost: Partial<Resources>, gain: Partial<Resources> = {}) {
-  const r = { ...state.resources };
-  for (const k of Object.keys(r) as (keyof Resources)[]) r[k] += (gain[k] ?? 0) - (cost[k] ?? 0);
-  return r;
+export function resetPrices() {
+  set({ prices: { ...DEFAULT_PRICES } });
+}
+/** Starts a brand new island. Keeps the player's price settings and sound choice. */
+export function resetGame() {
+  const { prices, sound } = state;
+  set({ ...seed(), prices, sound });
 }
 
 export function setTool(tool: Tool) {
@@ -159,8 +162,8 @@ export function placeAt(x: number, z: number) {
   z = Math.round(z * 2) / 2;
   const err = validate(tool, x, z);
   if (err) return flash(err);
-  const cost = COSTS[tool];
-  if (!canAfford(cost)) return flash("Recursos insuficientes");
+  const cost = state.prices[tool];
+  if (state.resources.coins < cost) return flash("Moedas insuficientes");
   const xp = state.xp + XP_GAIN[tool as keyof typeof XP_GAIN];
   if (tool === "lake") {
     const r = 1.6;
@@ -186,25 +189,25 @@ export function placeAt(x: number, z: number) {
 export function removeObject(oid: string) {
   const o = state.objects.find((x) => x.id === oid);
   if (!o) return;
-  const gain: Partial<Resources> =
-    o.kind === "tree" || o.kind === "palm" ? { wood: 3 } : o.kind === "rock" ? { stone: 2 } : o.kind === "house" ? { wood: 4, stone: 2 } : { coins: 3 };
-  set({ objects: state.objects.filter((x) => x.id !== oid), resources: pay({}, gain), xp: state.xp + XP_GAIN.remove });
+  const kind: Buildable = o.kind === "palm" ? "tree" : o.kind;
+  const gain = Math.floor(state.prices[kind] * REFUND);
+  set({ objects: state.objects.filter((x) => x.id !== oid), resources: pay(0, gain), xp: state.xp + XP_GAIN.remove });
 }
 
 /** Passive income: called by the HUD on an interval. */
 export function tickIncome() {
   const houses = state.objects.filter((o) => o.kind === "house").length;
   const animals = state.objects.filter((o) => o.kind === "animal").length;
-  set({ resources: pay({}, { coins: 1 + houses + Math.floor(animals / 2) }) });
+  set({ resources: pay(0, 1 + houses + Math.floor(animals / 2)) });
 }
 
 /** Serializable snapshot — ready to be stored in a Lovable Cloud table later. */
 export function snapshot() {
-  const { objects, lakes, resources, xp, expansion } = state;
-  return { objects, lakes, resources, xp, expansion };
+  const { objects, lakes, resources, xp, expansion, prices } = state;
+  return { objects, lakes, resources, xp, expansion, prices };
 }
 export function loadSnapshot(s: Partial<ReturnType<typeof snapshot>>) {
-  state = { ...state, ...s, expansion: s.expansion ?? 0, tool: null, celebration: null };
+  state = { ...state, ...s, resources: { coins: s.resources?.coins ?? 30 }, prices: { ...DEFAULT_PRICES, ...s.prices }, expansion: s.expansion ?? 0, tool: null, celebration: null };
   curExpansion = state.expansion;
   // Rebuild any regions the saved level has earned (older saves), silently.
   checkExpansion(false);
